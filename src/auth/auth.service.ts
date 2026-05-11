@@ -1,6 +1,8 @@
 import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
+import { randomBytes } from 'crypto';
 import { JwtService } from '@nestjs/jwt';
 import { FirebaseService } from '../firebase/firebase.service';
+import { MailService } from '../mail/mail.service';
 import * as bcrypt from 'bcrypt';
 import { SigninDto, SignupDto, ForgotPasswordDto } from './dto/auth.dto';
 
@@ -9,6 +11,7 @@ export class AuthService {
   constructor(
     private firebaseService: FirebaseService,
     private jwtService: JwtService,
+    private mailService: MailService,
   ) { }
 
   async signup(signupDto: SignupDto) {
@@ -16,7 +19,6 @@ export class AuthService {
     const db = this.firebaseService.getDb();
     const usersRef = db.collection('users');
 
-    // Check if user exists
     const userSnapshot = await usersRef.where('email', '==', email).get();
     if (!userSnapshot.empty) {
       throw new ConflictException('User already exists');
@@ -90,10 +92,26 @@ export class AuthService {
 
       const userSnapshot = await usersRef.where('email', '==', email).get();
 
-      if (!userSnapshot.empty) {
-        // Here you would generate token and send actual email
-        console.log(`[Background] Password reset requested for: ${email}`);
+      if (userSnapshot.empty) {
+        return;
       }
+
+      const token = randomBytes(32).toString('hex');
+      const expiresAt = new Date();
+      expiresAt.setHours(expiresAt.getHours() + 1); // 1 hour expiry
+
+      const resetRef = db.collection('password_resets');
+      await resetRef.doc(token).set({
+        email,
+        expiresAt: expiresAt.toISOString(),
+        used: false,
+        createdAt: new Date().toISOString(),
+      });
+
+      const resetLink = `https://reavivar.app/reset-password?token=${token}`;
+
+      await this.mailService.sendPasswordResetEmail(email, resetLink);
+      console.log(`[Background] Password reset email sent with token to: ${email}`);
     } catch (error) {
       console.error(`[Background] Error processing forgot password for ${email}:`, error);
     }
