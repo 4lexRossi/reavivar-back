@@ -10,10 +10,19 @@ export class FirebaseService implements OnModuleInit {
 
   onModuleInit() {
     if (admin.apps.length === 0) {
-      const serviceAccountPath = './firebase-service-account.json';
-      admin.initializeApp({
-        credential: admin.credential.cert(serviceAccountPath),
-      });
+      const serviceAccountVar = this.configService.get<string>('FIREBASE_SERVICE_ACCOUNT');
+
+      if (serviceAccountVar) {
+        const serviceAccount = JSON.parse(serviceAccountVar);
+        admin.initializeApp({
+          credential: admin.credential.cert(serviceAccount),
+        });
+      } else {
+        const serviceAccountPath = './firebase-service-account.json';
+        admin.initializeApp({
+          credential: admin.credential.cert(serviceAccountPath),
+        });
+      }
     }
     this.firestore = admin.firestore();
   }

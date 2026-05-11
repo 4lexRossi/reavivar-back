@@ -5,7 +5,24 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.useGlobalPipes(new ValidationPipe());
-  app.enableCors(); // Enable CORS for the frontend
-  await app.listen(process.env.PORT ?? 3000);
+  app.enableCors();
+  
+  if (process.env.NODE_ENV !== 'production') {
+    await app.listen(process.env.PORT ?? 3000);
+  }
+  
+  return app.getHttpAdapter().getInstance();
 }
-bootstrap();
+
+let handler: any;
+export default async (req: any, res: any) => {
+  if (!handler) {
+    handler = await bootstrap();
+  }
+  return handler(req, res);
+};
+
+// Keep for local dev
+if (process.env.NODE_ENV !== 'production') {
+  bootstrap();
+}
