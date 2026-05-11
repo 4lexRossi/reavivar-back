@@ -13,12 +13,25 @@ export class FirebaseService implements OnModuleInit {
       const serviceAccountVar = this.configService.get<string>('FIREBASE_SERVICE_ACCOUNT');
 
       if (serviceAccountVar) {
-        const serviceAccount = JSON.parse(serviceAccountVar);
-        admin.initializeApp({
-          credential: admin.credential.cert(serviceAccount),
-        });
+        try {
+          const serviceAccount = JSON.parse(serviceAccountVar);
+
+          if (serviceAccount.private_key) {
+            serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
+          }
+
+          admin.initializeApp({
+            credential: admin.credential.cert(serviceAccount),
+          });
+          console.log('[Firebase] Initialized using environment variable');
+        } catch (error) {
+          console.error('[Firebase] Failed to parse FIREBASE_SERVICE_ACCOUNT env var:', error.message);
+          throw error;
+        }
       } else {
+        // Local fallback (only for development)
         const serviceAccountPath = './firebase-service-account.json';
+        console.log('[Firebase] Initializing using local file:', serviceAccountPath);
         admin.initializeApp({
           credential: admin.credential.cert(serviceAccountPath),
         });
