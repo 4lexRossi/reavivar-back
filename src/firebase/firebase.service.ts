@@ -10,12 +10,15 @@ export class FirebaseService implements OnModuleInit {
 
   onModuleInit() {
     if (admin.apps.length === 0) {
-      const serviceAccountVar = this.configService.get<string>('FIREBASE_SERVICE_ACCOUNT');
+      // Try both ConfigService and direct process.env
+      const serviceAccountVar = 
+        this.configService.get<string>('FIREBASE_SERVICE_ACCOUNT') || 
+        process.env.FIREBASE_SERVICE_ACCOUNT;
 
       if (serviceAccountVar) {
         try {
           const serviceAccount = JSON.parse(serviceAccountVar);
-
+          
           if (serviceAccount.private_key) {
             serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
           }
@@ -23,13 +26,18 @@ export class FirebaseService implements OnModuleInit {
           admin.initializeApp({
             credential: admin.credential.cert(serviceAccount),
           });
-          console.log('[Firebase] Initialized using environment variable');
+          console.log('[Firebase] Initialized successfully using environment variable.');
         } catch (error) {
-          console.error('[Firebase] Failed to parse FIREBASE_SERVICE_ACCOUNT env var:', error.message);
+          console.error('[Firebase] Error parsing FIREBASE_SERVICE_ACCOUNT:', error.message);
           throw error;
         }
+      } else if (process.env.NODE_ENV === 'production') {
+        // In production, we MUST have the environment variable
+        const errorMsg = 'CRITICAL: FIREBASE_SERVICE_ACCOUNT environment variable is missing in production!';
+        console.error(errorMsg);
+        throw new Error(errorMsg);
       } else {
-        // Local fallback (only for development)
+        // Local fallback (development only)
         const serviceAccountPath = './firebase-service-account.json';
         console.log('[Firebase] Initializing using local file:', serviceAccountPath);
         admin.initializeApp({
