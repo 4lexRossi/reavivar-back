@@ -1,31 +1,31 @@
 import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
+import { randomBytes } from 'crypto';
 import { JwtService } from '@nestjs/jwt';
 import { FirebaseService } from '../firebase/firebase.service';
+import { MailService } from '../mail/mail.service';
 import * as bcrypt from 'bcrypt';
-import { SigninDto, SignupDto } from './dto/auth.dto';
+import { SigninDto, SignupDto, ForgotPasswordDto } from './dto/auth.dto';
 
 @Injectable()
 export class AuthService {
   constructor(
     private firebaseService: FirebaseService,
     private jwtService: JwtService,
-  ) {}
+    private mailService: MailService,
+  ) { }
 
   async signup(signupDto: SignupDto) {
     const { email, password, name, birthdate, phoneNumber } = signupDto;
     const db = this.firebaseService.getDb();
     const usersRef = db.collection('users');
 
-    // Check if user exists
     const userSnapshot = await usersRef.where('email', '==', email).get();
     if (!userSnapshot.empty) {
       throw new ConflictException('User already exists');
     }
 
-    // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Save to Firestore
     const newUser = {
       email,
       password: hashedPassword,
@@ -36,7 +36,6 @@ export class AuthService {
     };
 
     const docRef = await usersRef.add(newUser);
-    
     return {
       id: docRef.id,
       email,
@@ -64,7 +63,7 @@ export class AuthService {
     }
 
     const payload = { sub: userSnapshot.docs[0].id, email: userData.email };
-    
+
     return {
       access_token: await this.jwtService.signAsync(payload),
       user: {
@@ -73,5 +72,48 @@ export class AuthService {
         name: userData.name,
       },
     };
+  }
+
+  async forgotPassword(forgotPasswordDto: ForgotPasswordDto) {
+    const { email } = forgotPasswordDto;
+
+    // Start background process without awaiting
+    this.handleForgotPasswordBackground(email);
+
+    return {
+      message: 'Você receberá um e-mail de recuperação em instantes, caso conste em nosso cadastro, caso não receba crie uma nova conta.'
+    }
+  }
+
+  private async handleForgotPasswordBackground(email: string) {
+    try {
+      const db = this.firebaseService.getDb();
+      const usersRef = db.collection('users');
+
+      const userSnapshot = await usersRef.where('email', '==', email).get();
+
+      if (userSnapshot.empty) {
+        return;
+      }
+
+      const token = randomBytes(32).toString('hex');
+      const expiresAt = new Date();
+      expiresAt.setHours(expiresAt.getHours() + 1); // 1 hour expiry
+
+      const resetRef = db.collection('password_resets');
+      await resetRef.doc(token).set({
+        email,
+        expiresAt: expiresAt.toISOString(),
+        used: false,
+        createdAt: new Date().toISOString(),
+      });
+
+      const resetLink = `https://reavivar.app/reset-password?token=${token}`;
+
+      await this.mailService.sendPasswordResetEmail(email, resetLink);
+      console.log(`[Background] Password reset email sent with token to: ${email}`);
+    } catch (error) {
+      console.error(`[Background] Error processing forgot password for ${email}:`, error);
+    }
   }
 }
